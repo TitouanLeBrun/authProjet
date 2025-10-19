@@ -4,6 +4,7 @@ using System.Text;
 using authProjet.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace authProjet.Services
 {
@@ -11,11 +12,13 @@ namespace authProjet.Services
     {
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IConfiguration _configuration;
+        private readonly IEmailService _emailService;
 
-        public AuthService(UserManager<ApplicationUser> userManager, IConfiguration configuration)
+        public AuthService(UserManager<ApplicationUser> userManager, IConfiguration configuration, IEmailService emailService)
         {
             _userManager = userManager;
             _configuration = configuration;
+            _emailService = emailService;
         }
 
         public async Task<(bool success, string token)> LoginAsync(string email, string password)
@@ -24,6 +27,12 @@ namespace authProjet.Services
             if (user == null || !await _userManager.CheckPasswordAsync(user, password))
             {
                 return (false, "Invalid credentials");
+            }
+
+            // Ensure email is confirmed
+            if (!await _userManager.IsEmailConfirmedAsync(user))
+            {
+                return (false, "Email not confirmed");
             }
 
             var token = GenerateJwtToken(user);
@@ -52,7 +61,17 @@ namespace authProjet.Services
                 return (false, string.Join(", ", result.Errors.Select(e => e.Description)));
             }
 
-            return (true, "User registered successfully");
+            // Generate email confirmation token
+            var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+
+            var callbackUrl = $"{_configuration["AppSettings:ClientUrl"] ?? "https://localhost:7013"}/api/auth/confirm-email?userId={Uri.EscapeDataString(user.Id)}&token={encodedToken}";
+
+            var html = $"<h1>Confirmez votre compte</h1><p>Veuillez cliquer sur le lien : <a href=\"{callbackUrl}\">Confirmer</a></p>";
+
+            await _emailService.SendEmailAsync(user.Email!, "Confirmez votre compte", html);
+
+            return (true, "Utilisateur enregistré. Veuillez consulter votre e-mail pour confirmer votre compte.");
         }
 
         private string GenerateJwtToken(ApplicationUser user)
