@@ -1,0 +1,9 @@
+bin/
+obj/
+.vs/
+*.db
+*.mdf
+*.ldf
+.env
+docker-compose.override.yml
+**/.DS_Store
